@@ -2556,12 +2556,14 @@
 
 
     var util = /*#__PURE__*/Object.freeze({
+        isVoidElement: isVoidElement,
+        isVisible: isVisible,
+        selInput: selInput,
+        isInput: isInput,
+        filter: filter,
+        within: within,
         ajax: ajax,
         getImage: getImage,
-        transition: transition,
-        Transition: Transition,
-        animate: animate,
-        Animation: Animation,
         attr: attr,
         hasAttr: hasAttr,
         removeAttr: removeAttr,
@@ -2619,12 +2621,10 @@
         isTouch: isTouch,
         getEventPos: getEventPos,
         fastdom: fastdom,
-        isVoidElement: isVoidElement,
-        isVisible: isVisible,
-        selInput: selInput,
-        isInput: isInput,
-        filter: filter,
-        within: within,
+        transition: transition,
+        Transition: Transition,
+        animate: animate,
+        Animation: Animation,
         bind: bind,
         hasOwn: hasOwn,
         hyphenate: hyphenate,
@@ -2806,7 +2806,7 @@
 
         if (document.body) {
 
-            init();
+            fastdom.read(init);
 
         } else {
 
@@ -4040,7 +4040,7 @@
 
                 var pos = getEventPos(e);
                 var target = 'tagName' in e.target ? e.target : e.target.parentNode;
-                off = once(document, pointerUp, function (e) {
+                off = once(document, (pointerUp + " " + pointerCancel), function (e) {
 
                     var ref = getEventPos(e);
                     var x = ref.x;
@@ -5295,10 +5295,20 @@
                 var prev = ref.minHeight;
 
 
+                if (!isVisible(this.$el)) {
+                    return false;
+                }
+
                 var minHeight = '';
                 var box = boxModelAdjust('height', this.$el, 'content-box');
 
                 if (this.expand) {
+
+                    this.$el.dataset.heightExpand = '';
+
+                    if ($('[data-height-expand]') !== this.$el) {
+                        return false;
+                    }
 
                     minHeight = height(window) - (offsetHeight(document.documentElement) - offsetHeight(this.$el)) - box || '';
 
@@ -7073,6 +7083,7 @@
 
                     css(document.documentElement, 'overflowY', this.overlay ? 'hidden' : '');
                     addClass(document.body, this.clsContainer, this.clsFlip);
+                    css(document.body, 'touch-action', 'pan-y pinch-zoom');
                     css(this.$el, 'display', 'block');
                     addClass(this.$el, this.clsOverlay);
                     addClass(this.panel, this.clsSidebarAnimation, this.mode !== 'reveal' ? this.clsMode : '');
@@ -7081,6 +7092,7 @@
                     addClass(document.body, this.clsContainerAnimation);
 
                     this.clsContainerAnimation && suppressUserScale();
+
 
                 }
             },
@@ -7092,6 +7104,7 @@
 
                 handler: function() {
                     removeClass(document.body, this.clsContainerAnimation);
+                    css(document.body, 'touch-action', '');
 
                     var active = this.getActive();
                     if (this.mode === 'none' || active && active !== this && active !== this.prev) {
@@ -8048,6 +8061,8 @@
             var ref = this.$el;
             var children = ref.children;
             this.show(filter(children, ("." + (this.cls)))[0] || children[this.active] || children[0]);
+
+            this.swiping && css(this.connects, 'touch-action', 'pan-y pinch-zoom');
 
         },
 
@@ -9492,6 +9507,7 @@
             finite: false,
             velocity: 1,
             index: 0,
+            prevIndex: -1,
             stack: [],
             percent: 0,
             clsActive: 'uk-active',
@@ -9500,16 +9516,22 @@
             transitionOptions: {}
         }); },
 
+        connected: function() {
+            this.prevIndex = -1;
+            this.index = this.getValidIndex(this.index);
+            this.stack = [];
+        },
+
+        disconnected: function() {
+            removeClass(this.slides, this.clsActive);
+        },
+
         computed: {
 
             duration: function(ref, $el) {
                 var velocity = ref.velocity;
 
                 return speedUp($el.offsetWidth / velocity);
-            },
-
-            length: function() {
-                return this.slides.length;
             },
 
             list: function(ref, $el) {
@@ -9528,8 +9550,20 @@
                 return (selList + " > *");
             },
 
-            slides: function() {
-                return toNodes(this.list.children);
+            slides: {
+
+                get: function() {
+                    return toNodes(this.list.children);
+                },
+
+                watch: function() {
+                    this.$reset();
+                }
+
+            },
+
+            length: function() {
+                return this.slides.length;
             }
 
         },
@@ -9790,6 +9824,7 @@
             selList: '.uk-lightbox-items',
             attrItem: 'uk-lightbox-item',
             selClose: '.uk-close-large',
+            selCaption: '.uk-lightbox-caption',
             pauseOnHover: false,
             velocity: 2,
             Animations: Animations$1,
@@ -9797,14 +9832,22 @@
         }); },
 
         created: function() {
-            var this$1 = this;
 
+            var $el = $(this.template);
+            var list = $(this.selList, $el);
+            this.items.forEach(function () { return append(list, '<li></li>'); });
 
-            this.$mount(append(this.container, this.template));
+            this.$mount(append(this.container, $el));
 
-            this.caption = $('.uk-lightbox-caption', this.$el);
+        },
 
-            this.items.forEach(function () { return append(this$1.list, '<li></li>'); });
+        computed: {
+
+            caption: function(ref, $el) {
+                var selCaption = ref.selCaption;
+
+                return $('.uk-lightbox-caption', $el);
+            }
 
         },
 
@@ -10799,10 +10842,11 @@
                     return;
                 }
 
-                var index = this.getValidIndex();
-                delete this.index;
-                removeClass(this.slides, this.clsActive, this.clsActivated);
-                this.show(index);
+                var index = this.getValidIndex(this.index);
+
+                if (!~this.prevIndex || this.index !== index) {
+                    this.show(index);
+                }
 
             },
 
@@ -11108,6 +11152,10 @@
                     var index = data(el, this$1.attrItem);
                     this$1.maxIndex && toggleClass(el, 'uk-hidden', isNumeric(index) && (this$1.sets && !includes(this$1.sets, toFloat(index)) || index > this$1.maxIndex));
                 });
+
+                if (!this.dragging && !this.stack.length) {
+                    this._getTransitioner().translate(1);
+                }
 
             },
 
